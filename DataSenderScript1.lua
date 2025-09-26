@@ -1,5 +1,7 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 
@@ -137,16 +139,24 @@ local function isServerFull()
     return currentPlayers >= maxPlayers
 end
 
--- Get all target models in workspace
+-- Get all target models in workspace (optimized)
 local function getTargetModels()
     local foundModels = {}
     
-    for _, model in pairs(Workspace:GetDescendants()) do
-        if model:IsA("Model") then
-            for _, targetName in ipairs(targetNames) do
-                if model.Name == targetName then
-                    table.insert(foundModels, model.Name)
-                    break
+    -- Use batch processing to prevent lag
+    local descendants = Workspace:GetDescendants()
+    for i = 1, #descendants, 50 do
+        RunService.Heartbeat:Wait() -- Yield to prevent freezing
+        local endIndex = math.min(i + 49, #descendants)
+        
+        for j = i, endIndex do
+            local descendant = descendants[j]
+            if descendant:IsA("Model") then
+                for _, targetName in ipairs(targetNames) do
+                    if descendant.Name == targetName then
+                        table.insert(foundModels, descendant.Name)
+                        break
+                    end
                 end
             end
         end
@@ -155,86 +165,115 @@ local function getTargetModels()
     return foundModels
 end
 
--- Get current time in Baghdad (UTC+3)
-local function getBaghdadTime()
+-- Get current time in Philippines (UTC+8)
+local function getPhilippineTime()
     local utcTime = os.time(os.date("!*t"))
-    local baghdadTime = utcTime + (3 * 3600) -- UTC+3 for Baghdad
-    return os.date("%Y-%m-%d %H:%M:%S", baghdadTime)
+    local philippineTime = utcTime + (8 * 3600) -- UTC+8 for Philippines
+    return os.date("%Y-%m-%d %H:%M:%S", philippineTime)
 end
 
--- Send data to API
+-- Send data via RemoteEvent (bypasses HTTP restrictions)
 local function sendDataToAPI()
     -- Check if we should skip sending data
     if isPrivateServer() then
-        print("Private server detected - skipping API call")
+        print("🇵🇭 Private server detected - skipping data send")
         return
     end
     
     if isServerFull() then
-        print("Server is full - skipping API call")
+        print("🇵🇭 Server is full - skipping data send")
         return
     end
     
     -- Collect data
     local targetModels = getTargetModels()
-    local baghdadTime = getBaghdadTime() -- Use Baghdad time instead of local time
+    local philippineTime = getPhilippineTime()
     local playerCount = #Players:GetPlayers()
     local maxPlayers = Players.MaxPlayers
-    local placeId = game.PlaceId
-    local jobId = game.JobId
     
-    -- Prepare pets data (uncut - send raw names)
+    -- Only send if we found pets
+    if #targetModels == 0 then
+        print("🇵🇭 No target pets found - skipping data send")
+        return
+    end
+    
+    -- Prepare pets data
     local petsData = {}
     for _, petName in ipairs(targetModels) do
         table.insert(petsData, {
-            name = petName -- No modification to keep uncut
+            name = petName
         })
     end
     
     -- Prepare request data
     local requestData = {
-        targetPlayer = LocalPlayer.Name, -- Uncut
+        targetPlayer = LocalPlayer.Name,
         playerCount = playerCount,
         maxPlayers = maxPlayers,
-        placeId = tostring(placeId), -- Uncut
-        jobId = jobId, -- Uncut
-        pets = petsData, -- Uncut
-        timestamp = baghdadTime -- Baghdad time
+        placeId = tostring(game.PlaceId),
+        jobId = game.JobId,
+        pets = petsData,
+        timestamp = philippineTime,
+        scriptVersion = "DataSenderScript1"
     }
     
-    print("Sending data to API with Baghdad time:", baghdadTime)
+    print("🇵🇭 Sending data with Philippine time:", philippineTime)
+    print("🇵🇭 Pets found:", #targetModels, "Players:", playerCount .. "/" .. maxPlayers)
     
-    -- Send HTTP request
-    local success, response = pcall(function()
-        return HttpService:RequestAsync({
-            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets", -- Your new API URL
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["Authorization"] = "h"
-            },
-            Body = HttpService:JSONEncode(requestData)
-        })
+    -- Send via RemoteEvent (bypasses HTTP restrictions)
+    local success, errorMessage = pcall(function()
+        local PetTrackerRemote = ReplicatedStorage:FindFirstChild("PetTrackerRemote")
+        if PetTrackerRemote then
+            PetTrackerRemote:FireServer(requestData)
+            return true
+        else
+            -- Fallback to HTTP if RemoteEvent doesn't exist
+            local httpSuccess, response = pcall(function()
+                return HttpService:RequestAsync({
+                    Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["Authorization"] = "h"
+                    },
+                    Body = HttpService:JSONEncode(requestData)
+                })
+            end)
+            
+            if httpSuccess then
+                print("🇵🇭 HTTP fallback: Data sent successfully")
+            else
+                warn("🇵🇭 HTTP fallback failed:", response)
+            end
+            return httpSuccess
+        end
     end)
     
-    -- Handle response
-    if success then
-        print("Data sent successfully to API")
-        print("Response:", response.Body)
-    else
-        warn("Failed to send data to API:", response)
+    if not success then
+        warn("🇵🇭 Failed to send data:", errorMessage)
     end
 end
 
--- Initial data collection and send
-sendDataToAPI()
+-- Debounce mechanism to prevent spam
+local lastSendTime = 0
+local SEND_COOLDOWN = 10 -- seconds
+
+local function debouncedSendData()
+    local currentTime = tick()
+    if currentTime - lastSendTime < SEND_COOLDOWN then
+        return
+    end
+    lastSendTime = currentTime
+    
+    sendDataToAPI()
+end
 
 -- Set up connection to send data when models change
 local function handleDescendantAdded(descendant)
     if descendant:IsA("Model") then
         for _, targetName in ipairs(targetNames) do
             if descendant.Name == targetName then
-                sendDataToAPI()
+                debouncedSendData()
                 break
             end
         end
@@ -245,17 +284,23 @@ local function handleDescendantRemoved(descendant)
     if descendant:IsA("Model") then
         for _, targetName in ipairs(targetNames) do
             if descendant.Name == targetName then
-                sendDataToAPI()
+                debouncedSendData()
                 break
             end
         end
     end
 end
 
--- Connect events
+-- Connect events with debouncing
 Workspace.DescendantAdded:Connect(handleDescendantAdded)
 Workspace.DescendantRemoved:Connect(handleDescendantRemoved)
 
--- Also send data when players join/leave
-Players.PlayerAdded:Connect(sendDataToAPI)
-Players.PlayerRemoving:Connect(sendDataToAPI)
+-- Also send data when players join/leave (with debouncing)
+Players.PlayerAdded:Connect(debouncedSendData)
+Players.PlayerRemoving:Connect(debouncedSendData)
+
+-- Wait for game to load then send initial data
+wait(5)
+debouncedSendData()
+
+print("🇵🇭 DataSenderScript1 loaded with Philippine Time (UTC+8)")
