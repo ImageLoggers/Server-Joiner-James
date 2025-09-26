@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
@@ -172,16 +171,16 @@ local function getPhilippineTime()
     return os.date("%Y-%m-%d %H:%M:%S", philippineTime)
 end
 
--- Send data via RemoteEvent (bypasses HTTP restrictions)
+-- Send data to API using CORS proxy
 local function sendDataToAPI()
     -- Check if we should skip sending data
     if isPrivateServer() then
-        print("🇵🇭 Private server detected - skipping data send")
+        print("🇵🇭 Private server detected - skipping API call")
         return
     end
     
     if isServerFull() then
-        print("🇵🇭 Server is full - skipping data send")
+        print("🇵🇭 Server is full - skipping API call")
         return
     end
     
@@ -190,10 +189,12 @@ local function sendDataToAPI()
     local philippineTime = getPhilippineTime()
     local playerCount = #Players:GetPlayers()
     local maxPlayers = Players.MaxPlayers
+    local placeId = game.PlaceId
+    local jobId = game.JobId
     
     -- Only send if we found pets
     if #targetModels == 0 then
-        print("🇵🇭 No target pets found - skipping data send")
+        print("🇵🇭 No target pets found - skipping API call")
         return
     end
     
@@ -210,47 +211,84 @@ local function sendDataToAPI()
         targetPlayer = LocalPlayer.Name,
         playerCount = playerCount,
         maxPlayers = maxPlayers,
-        placeId = tostring(game.PlaceId),
-        jobId = game.JobId,
+        placeId = tostring(placeId),
+        jobId = jobId,
         pets = petsData,
         timestamp = philippineTime,
         scriptVersion = "DataSenderScript1"
     }
     
-    print("🇵🇭 Sending data with Philippine time:", philippineTime)
+    print("🇵🇭 Sending data to API with Philippine time:", philippineTime)
     print("🇵🇭 Pets found:", #targetModels, "Players:", playerCount .. "/" .. maxPlayers)
     
-    -- Send via RemoteEvent (bypasses HTTP restrictions)
-    local success, errorMessage = pcall(function()
-        local PetTrackerRemote = ReplicatedStorage:FindFirstChild("PetTrackerRemote")
-        if PetTrackerRemote then
-            PetTrackerRemote:FireServer(requestData)
-            return true
-        else
-            -- Fallback to HTTP if RemoteEvent doesn't exist
-            local httpSuccess, response = pcall(function()
-                return HttpService:RequestAsync({
-                    Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["Authorization"] = "h"
-                    },
-                    Body = HttpService:JSONEncode(requestData)
-                })
-            end)
-            
-            if httpSuccess then
-                print("🇵🇭 HTTP fallback: Data sent successfully")
+    -- Try multiple CORS proxies in sequence
+    local proxies = {
+        "https://corsproxy.io/?url=",  -- Primary proxy
+        "https://api.codetabs.com/v1/proxy?quest=",  -- Backup proxy 1
+        "https://cors-anywhere.herokuapp.com/"  -- Backup proxy 2
+    }
+    
+    local targetUrl = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
+    local success = false
+    local lastError = ""
+    
+    for i, proxy in ipairs(proxies) do
+        local proxyUrl = proxy .. HttpService:UrlEncode(targetUrl)
+        
+        local proxySuccess, response = pcall(function()
+            return HttpService:RequestAsync({
+                Url = proxyUrl,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "h",
+                    ["X-Requested-With"] = "XMLHttpRequest"
+                },
+                Body = HttpService:JSONEncode(requestData)
+            })
+        end)
+        
+        if proxySuccess then
+            if response.Success then
+                print("✅ Data sent successfully via proxy " .. i)
+                print("Response:", response.Body)
+                success = true
+                break
             else
-                warn("🇵🇭 HTTP fallback failed:", response)
+                lastError = "Proxy " .. i .. " returned error: " .. tostring(response.StatusCode)
+                warn("❌ " .. lastError)
             end
-            return httpSuccess
+        else
+            lastError = "Proxy " .. i .. " failed: " .. tostring(response)
+            warn("❌ " .. lastError)
         end
-    end)
+        
+        -- Wait before trying next proxy
+        if i < #proxies then
+            wait(1)
+        end
+    end
     
     if not success then
-        warn("🇵🇭 Failed to send data:", errorMessage)
+        -- Final attempt: direct connection (in case proxies are down)
+        local directSuccess, directResponse = pcall(function()
+            return HttpService:RequestAsync({
+                Url = targetUrl .. "?t=" .. tick(),  -- Cache buster
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "h"
+                },
+                Body = HttpService:JSONEncode(requestData)
+            })
+        end)
+        
+        if directSuccess and directResponse.Success then
+            print("✅ Data sent successfully via direct connection")
+            success = true
+        else
+            warn("❌ All methods failed. Last error: " .. lastError)
+        end
     end
 end
 
@@ -303,4 +341,4 @@ Players.PlayerRemoving:Connect(debouncedSendData)
 wait(5)
 debouncedSendData()
 
-print("🇵🇭 DataSenderScript1 loaded with Philippine Time (UTC+8)")
+print("🇵🇭 DataSenderScript1 loaded with Philippine Time (UTC+8) and CORS proxy")
