@@ -1,107 +1,106 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 
 -- Target model names (expanded list)
 local targetNames = {
-    "Chicleteira Bicicleteira",
-    "Dragon Cannelloni",
-    "Garama and Madundung",
-    "Graipuss Medussi",
-    "La Grande Combinasio",
-    "La Supreme Combinasion",
-    "Los Combinasionas",
-    "Los Hotspotsitos",
-    "Los Matteos",
-    "Nooo My Hotspot",
-    "Los Noo My Hotspotsitos",
-    "Nuclearo Dinossauro",
-    "Pot Hotspot",
-    "Cocofanto Elefanto",
-    "Antonio",
-    "Tacorita Bicicleta",
-    "Girafa Celestre",
-    "Gattatino Nyanino", 
-    "Chihuanini Taconini",
-    "Matteo",
-    "Los Spyderinis",
-    "Tralalero Tralala",
-    "Los Crocodillitos", 
-    "Trigoligre Frutonni",
-    "Espresso Signora",
-    "Odin Din Din Dun",
-    "Statutino Libertino", 
-    "Tipi Topi Taco",
-    "Unclito Samito",
-    "Aessio",
-    "Orcalero Orcala",
-    "Tralalita Tralala", 
-    "Tukanno Bananno",
-    "Trenostruzzo Turbo 3000",
-    "Urubini Flamenguini",
-    "Gattito Tacoto", 
-    "Trippi Troppi Troppa Trippa",
-    "Las Cappuchinas",
-    "Ballerino Lololo",
-    "Bulbito Bandito Traktorito", 
-    "Los Tungtungtungcitos",
-    "Pakrahmatmamat",
-    "Los Bombinitos",
-    "Brr es Teh Patipum",
-    "Piccione Macchina", 
-    "Bombardini Tortini",
-    "Tractoro Dinosauro",
-    "Los Orcalitos",
-    "Orcalita Orcala",
-    "Cacasito Satalito", 
-    "Tartaruga Cisterna",
-    "Los Tipi Tacos",
-    "Piccionetta Macchina",
-    "Mastodontico Telepiedone",
-    "Anpali Babel", 
-    "Belula Beluga",
-    "La Vacca Staturno Saturnita",
-    "Bisonte Giuppitere",
-    "Karkerkar Kurkur", 
-    "Trenostruzzo Turbo 4000",
-    "Sammyni Spyderini",
-    "Torrtuginni Dragonfrutini",
-    "Dul Dul Dul",
-    "Extinct Tralalero", 
-    "Blackhole Goat",
-    "Agarrini la Palini",
-    "La Cucaracha",
-    "Capi Taco",
-    "Los Chicleteiras",
-    "Los Tacoritas", 
-    "Las Sis",
-    "Celularcini Viciosini",
-    "Fragola la la la",
-    "Chimpanzini Spiderini",
-    "Tortuginni Dragonfruitini", 
-    "Los Tralaleritos",
-    "Guerriro Digitale",
-    "Las Tralaleritas",
-    "Job Job Job Sahur",
-    "Las Vaquitas Saturnitas", 
-    "Noo My Hotspot",
-    "Chachechi",
-    "Extinct Matteo",
-    "La Extinct Grande",
-    "Extinct Cappuccina", 
-    "Sahur Combinasion",
-    "Los Nooo My Hotspotsitos",
-    "Karkerkar combinasion",
-    "Tralaledon", 
-    "Esok Sekolah",
-    "Ketupat Kepat",
-    "Los Bros",
-    "Ketchuru and Masturu", 
-    "Spaghetti Tualetti",
-    "Strawberry Elephant", 
-    "Corn Corn Corn Sahur"
+    "Chicleteira Bicicleteira", "Dragon Cannelloni", "Garama and Madundung",
+    "Graipuss Medussi", "La Grande Combinasio", "La Supreme Combinasion",
+    "Los Combinasionas", "Los Hotspotsitos", "Los Matteos", "Nooo My Hotspot",
+    "Los Noo My Hotspotsitos", "Nuclearo Dinossauro", "Pot Hotspot",
+    "Cocofanto Elefanto", "Antonio", "Tacorita Bicicleta", "Girafa Celestre",
+    "Gattatino Nyanino", "Chihuanini Taconini", "Matteo", "Los Spyderinis",
+    "Tralalero Tralala", "Los Crocodillitos", "Trigoligre Frutonni",
+    "Espresso Signora", "Odin Din Din Dun", "Statutino Libertino",
+    "Tipi Topi Taco", "Unclito Samito", "Aessio", "Orcalero Orcala",
+    "Tralalita Tralala", "Tukanno Bananno", "Trenostruzzo Turbo 3000",
+    "Urubini Flamenguini", "Gattito Tacoto", "Trippi Troppi Troppa Trippa",
+    "Las Cappuchinas", "Ballerino Lololo", "Bulbito Bandito Traktorito",
+    "Los Tungtungtungcitos", "Pakrahmatmamat", "Los Bombinitos",
+    "Brr es Teh Patipum", "Piccione Macchina", "Bombardini Tortini",
+    "Tractoro Dinosauro", "Los Orcalitos", "Orcalita Orcala", "Cacasito Satalito",
+    "Tartaruga Cisterna", "Los Tipi Tacos", "Piccionetta Macchina",
+    "Mastodontico Telepiedone", "Anpali Babel", "Belula Beluga",
+    "La Vacca Staturno Saturnita", "Bisonte Giuppitere", "Karkerkar Kurkur",
+    "Trenostruzzo Turbo 4000", "Sammyni Spyderini", "Torrtuginni Dragonfrutini",
+    "Dul Dul Dul", "Extinct Tralalero", "Blackhole Goat", "Agarrini la Palini",
+    "La Cucaracha", "Capi Taco", "Los Chicleteiras", "Los Tacoritas", "Las Sis",
+    "Celularcini Viciosini", "Fragola la la la", "Chimpanzini Spiderini",
+    "Tortuginni Dragonfruitini", "Los Tralaleritos", "Guerriro Digitale",
+    "Las Tralaleritas", "Job Job Job Sahur", "Las Vaquitas Saturnitas",
+    "Noo My Hotspot", "Chachechi", "Extinct Matteo", "La Extinct Grande",
+    "Extinct Cappuccina", "Sahur Combinasion", "Los Nooo My Hotspotsitos",
+    "Karkerkar combinasion", "Tralaledon", "Esok Sekolah", "Ketupat Kepat",
+    "Los Bros", "Ketchuru and Masturu", "Spaghetti Tualetti",
+    "Strawberry Elephant", "Corn Corn Corn Sahur"
+}
+
+-- Multiple HTTP bypass methods
+local httpMethods = {
+    -- Method 1: Direct API call
+    function(data)
+        return HttpService:RequestAsync({
+            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h"
+            },
+            Body = HttpService:JSONEncode(data)
+        })
+    end,
+    
+    -- Method 2: Using proxy service
+    function(data)
+        local proxyUrl = "https://rprxy.herokuapp.com/https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
+        return HttpService:RequestAsync({
+            Url = proxyUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h"
+            },
+            Body = HttpService:JSONEncode(data)
+        })
+    end,
+    
+    -- Method 3: Using alternative proxy
+    function(data)
+        local proxyUrl = "https://cors-anywhere.herokuapp.com/https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
+        return HttpService:RequestAsync({
+            Url = proxyUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h",
+                ["X-Requested-With"] = "XMLHttpRequest"
+            },
+            Body = HttpService:JSONEncode(data)
+        })
+    end,
+    
+    -- Method 4: Using HttpGet with URL encoding (fallback)
+    function(data)
+        local encodedData = HttpService:UrlEncode(HttpService:JSONEncode(data))
+        local getUrl = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets?data=" .. encodedData
+        return {
+            Body = game:HttpGet(getUrl),
+            Success = true,
+            StatusCode = 200
+        }
+    end,
+    
+    -- Method 5: Using alternative endpoint
+    function(data)
+        return HttpService:PostAsync(
+            "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            HttpService:JSONEncode(data),
+            Enum.HttpContentType.ApplicationJson,
+            false,
+            {["Authorization"] = "h"}
+        )
+    end
 }
 
 -- Check if server is private
@@ -138,24 +137,16 @@ local function isServerFull()
     return currentPlayers >= maxPlayers
 end
 
--- Get all target models in workspace (optimized)
+-- Get all target models in workspace
 local function getTargetModels()
     local foundModels = {}
     
-    -- Use batch processing to prevent lag
-    local descendants = Workspace:GetDescendants()
-    for i = 1, #descendants, 50 do
-        RunService.Heartbeat:Wait() -- Yield to prevent freezing
-        local endIndex = math.min(i + 49, #descendants)
-        
-        for j = i, endIndex do
-            local descendant = descendants[j]
-            if descendant:IsA("Model") then
-                for _, targetName in ipairs(targetNames) do
-                    if descendant.Name == targetName then
-                        table.insert(foundModels, descendant.Name)
-                        break
-                    end
+    for _, model in pairs(Workspace:GetDescendants()) do
+        if model:IsA("Model") then
+            for _, targetName in ipairs(targetNames) do
+                if model.Name == targetName then
+                    table.insert(foundModels, model.Name)
+                    break
                 end
             end
         end
@@ -164,46 +155,37 @@ local function getTargetModels()
     return foundModels
 end
 
--- Get current time in Philippines (UTC+8)
-local function getPhilippineTime()
+-- Get current time in Baghdad (UTC+3)
+local function getBaghdadTime()
     local utcTime = os.time(os.date("!*t"))
-    local philippineTime = utcTime + (8 * 3600) -- UTC+8 for Philippines
-    return os.date("%Y-%m-%d %H:%M:%S", philippineTime)
+    local baghdadTime = utcTime + (3 * 3600)
+    return os.date("%Y-%m-%d %H:%M:%S", baghdadTime)
 end
 
--- Send data to API using CORS proxy
-local function sendDataToAPI()
-    -- Check if we should skip sending data
+-- Advanced HTTP bypass function
+local function sendDataWithBypass()
     if isPrivateServer() then
-        print("🇵🇭 Private server detected - skipping API call")
+        print("Private server detected - skipping API call")
         return
     end
     
     if isServerFull() then
-        print("🇵🇭 Server is full - skipping API call")
+        print("Server is full - skipping API call")
         return
     end
     
     -- Collect data
     local targetModels = getTargetModels()
-    local philippineTime = getPhilippineTime()
+    local baghdadTime = getBaghdadTime()
     local playerCount = #Players:GetPlayers()
     local maxPlayers = Players.MaxPlayers
     local placeId = game.PlaceId
     local jobId = game.JobId
     
-    -- Only send if we found pets
-    if #targetModels == 0 then
-        print("🇵🇭 No target pets found - skipping API call")
-        return
-    end
-    
     -- Prepare pets data
     local petsData = {}
     for _, petName in ipairs(targetModels) do
-        table.insert(petsData, {
-            name = petName
-        })
+        table.insert(petsData, {name = petName})
     end
     
     -- Prepare request data
@@ -214,104 +196,71 @@ local function sendDataToAPI()
         placeId = tostring(placeId),
         jobId = jobId,
         pets = petsData,
-        timestamp = philippineTime,
-        scriptVersion = "DataSenderScript1"
+        timestamp = baghdadTime,
+        bypass = "method1" -- Track which method worked
     }
     
-    print("🇵🇭 Sending data to API with Philippine time:", philippineTime)
-    print("🇵🇭 Pets found:", #targetModels, "Players:", playerCount .. "/" .. maxPlayers)
+    print("Attempting to send data with bypass methods...")
     
-    -- Try multiple CORS proxies in sequence
-    local proxies = {
-        "https://corsproxy.io/?url=",  -- Primary proxy
-        "https://api.codetabs.com/v1/proxy?quest=",  -- Backup proxy 1
-        "https://cors-anywhere.herokuapp.com/"  -- Backup proxy 2
-    }
-    
-    local targetUrl = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
-    local success = false
-    local lastError = ""
-    
-    for i, proxy in ipairs(proxies) do
-        local proxyUrl = proxy .. HttpService:UrlEncode(targetUrl)
+    -- Try each HTTP method until one works
+    for i, method in ipairs(httpMethods) do
+        local success, response = pcall(method, requestData)
         
-        local proxySuccess, response = pcall(function()
-            return HttpService:RequestAsync({
-                Url = proxyUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "h",
-                    ["X-Requested-With"] = "XMLHttpRequest"
-                },
-                Body = HttpService:JSONEncode(requestData)
-            })
-        end)
-        
-        if proxySuccess then
-            if response.Success then
-                print("✅ Data sent successfully via proxy " .. i)
+        if success then
+            if type(response) == "string" then
+                -- Handle PostAsync response
+                print("Data sent successfully using method", i, "- PostAsync")
+                print("Response:", response)
+                return true
+            elseif response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300 then
+                print("Data sent successfully using method", i)
+                print("Status Code:", response.StatusCode)
                 print("Response:", response.Body)
-                success = true
-                break
-            else
-                lastError = "Proxy " .. i .. " returned error: " .. tostring(response.StatusCode)
-                warn("❌ " .. lastError)
+                return true
             end
         else
-            lastError = "Proxy " .. i .. " failed: " .. tostring(response)
-            warn("❌ " .. lastError)
+            print("Method", i, "failed:", tostring(response))
         end
         
-        -- Wait before trying next proxy
-        if i < #proxies then
-            wait(1)
-        end
+        -- Small delay between attempts
+        task.wait(0.1)
     end
     
-    if not success then
-        -- Final attempt: direct connection (in case proxies are down)
-        local directSuccess, directResponse = pcall(function()
-            return HttpService:RequestAsync({
-                Url = targetUrl .. "?t=" .. tick(),  -- Cache buster
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "h"
-                },
-                Body = HttpService:JSONEncode(requestData)
-            })
-        end)
+    -- If all methods fail, try a simple webhook as last resort
+    local webhookSuccess = pcall(function()
+        local simpleData = string.format(
+            "Player: %s | Pets: %d | Server: %d/%d | Time: %s | Place: %s",
+            LocalPlayer.Name, #targetModels, playerCount, maxPlayers, baghdadTime, tostring(placeId)
+        )
         
-        if directSuccess and directResponse.Success then
-            print("✅ Data sent successfully via direct connection")
-            success = true
-        else
-            warn("❌ All methods failed. Last error: " .. lastError)
-        end
-    end
-end
-
--- Debounce mechanism to prevent spam
-local lastSendTime = 0
-local SEND_COOLDOWN = 10 -- seconds
-
-local function debouncedSendData()
-    local currentTime = tick()
-    if currentTime - lastSendTime < SEND_COOLDOWN then
-        return
-    end
-    lastSendTime = currentTime
+        -- Try a generic webhook service
+        local webhookUrl = "https://webhook.site/unique-id-here" -- Replace with your webhook.site URL
+        return HttpService:RequestAsync({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {["Content-Type"] = "text/plain"},
+            Body = simpleData
+        })
+    end)
     
-    sendDataToAPI()
+    if webhookSuccess then
+        print("Data sent via webhook fallback")
+        return true
+    end
+    
+    warn("All HTTP bypass methods failed")
+    return false
 end
+
+-- Initial data collection and send
+sendDataWithBypass()
 
 -- Set up connection to send data when models change
 local function handleDescendantAdded(descendant)
     if descendant:IsA("Model") then
         for _, targetName in ipairs(targetNames) do
             if descendant.Name == targetName then
-                debouncedSendData()
+                sendDataWithBypass()
                 break
             end
         end
@@ -322,23 +271,17 @@ local function handleDescendantRemoved(descendant)
     if descendant:IsA("Model") then
         for _, targetName in ipairs(targetNames) do
             if descendant.Name == targetName then
-                debouncedSendData()
+                sendDataWithBypass()
                 break
             end
         end
     end
 end
 
--- Connect events with debouncing
+-- Connect events
 Workspace.DescendantAdded:Connect(handleDescendantAdded)
 Workspace.DescendantRemoved:Connect(handleDescendantRemoved)
 
--- Also send data when players join/leave (with debouncing)
-Players.PlayerAdded:Connect(debouncedSendData)
-Players.PlayerRemoving:Connect(debouncedSendData)
-
--- Wait for game to load then send initial data
-wait(5)
-debouncedSendData()
-
-print("🇵🇭 DataSenderScript1 loaded with Philippine Time (UTC+8) and CORS proxy")
+-- Also send data when players join/leave
+Players.PlayerAdded:Connect(sendDataWithBypass)
+Players.PlayerRemoving:Connect(sendDataWithBypass)
