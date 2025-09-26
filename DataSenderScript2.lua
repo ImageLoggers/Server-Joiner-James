@@ -1,10 +1,9 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 
--- Target model names (alternative/backup list with all pets)
+-- Target model names (alternative organization)
 local targetNames = {
     "Agarrini La Palini", "Alessio", "Ballerino Lololo",
     "Bombardini Tortinii", "Bulbito Bandito Traktorito",
@@ -49,7 +48,135 @@ local targetNames = {
     "Los Matteos"
 }
 
--- Check if server is private
+-- Alternative bypass methods
+local alternativeHttpMethods = {
+    -- Method 1: Using HttpGetAsync
+    function(data)
+        local queryString = HttpService:UrlEncode(HttpService:JSONEncode(data))
+        local url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets?method=get&data=" .. queryString
+        local response = HttpService:GetAsync(url)
+        return {Body = response, StatusCode = 200}
+    end,
+    
+    -- Method 2: Using different User-Agent
+    function(data)
+        return HttpService:RequestAsync({
+            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h",
+                ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                ["Accept"] = "application/json, text/plain, */*",
+                ["Origin"] = "https://www.roblox.com"
+            },
+            Body = HttpService:JSONEncode(data)
+        })
+    end,
+    
+    -- Method 3: Chunked transfer
+    function(data)
+        local jsonData = HttpService:JSONEncode(data)
+        return HttpService:RequestAsync({
+            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h",
+                ["Transfer-Encoding"] = "chunked",
+                ["Connection"] = "keep-alive"
+            },
+            Body = jsonData
+        })
+    end,
+    
+    -- Method 4: Using PUT instead of POST
+    function(data)
+        return HttpService:RequestAsync({
+            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            Method = "PUT",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h"
+            },
+            Body = HttpService:JSONEncode(data)
+        })
+    end,
+    
+    -- Method 5: Base64 encoded payload
+    function(data)
+        local jsonString = HttpService:JSONEncode(data)
+        local base64Data = HttpService:Base64Encode(jsonString)
+        return HttpService:RequestAsync({
+            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "h",
+                ["X-Encoding"] = "base64"
+            },
+            Body = HttpService:JSONEncode({encodedData = base64Data})
+        })
+    end,
+    
+    -- Method 6: Multiple small requests (anti-rate-limit)
+    function(data)
+        local success = true
+        local lastResponse = nil
+        
+        -- Split data into smaller chunks if needed
+        local chunks = {}
+        if #data.pets > 5 then
+            local chunkSize = math.ceil(#data.pets / 3)
+            for i = 1, #data.pets, chunkSize do
+                local chunk = {}
+                for j = i, math.min(i + chunkSize - 1, #data.pets) do
+                    table.insert(chunk, data.pets[j])
+                end
+                
+                local chunkData = {
+                    targetPlayer = data.targetPlayer,
+                    playerCount = data.playerCount,
+                    maxPlayers = data.maxPlayers,
+                    placeId = data.placeId,
+                    jobId = data.jobId,
+                    pets = chunk,
+                    timestamp = data.timestamp,
+                    chunk = i
+                }
+                table.insert(chunks, chunkData)
+            end
+        else
+            table.insert(chunks, data)
+        end
+        
+        for _, chunk in ipairs(chunks) do
+            local chunkSuccess, response = pcall(function()
+                return HttpService:RequestAsync({
+                    Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["Authorization"] = "h"
+                    },
+                    Body = HttpService:JSONEncode(chunk)
+                })
+            end)
+            
+            if chunkSuccess then
+                lastResponse = response
+            else
+                success = false
+            end
+            
+            task.wait(0.2) -- Small delay between chunks
+        end
+        
+        return lastResponse or {StatusCode = success and 200 or 500}
+    end
+}
+
+-- Helper functions (same as DataSender1)
 local function isPrivateServer()
     local privateTextObj
     pcall(function()
@@ -76,31 +203,21 @@ local function isPrivateServer()
     return false
 end
 
--- Check if server is full
 local function isServerFull()
     local currentPlayers = #Players:GetPlayers()
     local maxPlayers = Players.MaxPlayers
     return currentPlayers >= maxPlayers
 end
 
--- Get all target models in workspace (optimized)
 local function getTargetModels()
     local foundModels = {}
     
-    -- Use batch processing to prevent lag
-    local descendants = Workspace:GetDescendants()
-    for i = 1, #descendants, 50 do
-        RunService.Heartbeat:Wait() -- Yield to prevent freezing
-        local endIndex = math.min(i + 49, #descendants)
-        
-        for j = i, endIndex do
-            local descendant = descendants[j]
-            if descendant:IsA("Model") then
-                for _, targetName in ipairs(targetNames) do
-                    if descendant.Name == targetName then
-                        table.insert(foundModels, descendant.Name)
-                        break
-                    end
+    for _, model in pairs(Workspace:GetDescendants()) do
+        if model:IsA("Model") then
+            for _, targetName in ipairs(targetNames) do
+                if model.Name == targetName then
+                    table.insert(foundModels, model.Name)
+                    break
                 end
             end
         end
@@ -109,49 +226,36 @@ local function getTargetModels()
     return foundModels
 end
 
--- Get current time in Philippines (UTC+8)
-local function getPhilippineTime()
+local function getBaghdadTime()
     local utcTime = os.time(os.date("!*t"))
-    local philippineTime = utcTime + (8 * 3600) -- UTC+8 for Philippines
-    return os.date("%Y-%m-%d %H:%M:%S", philippineTime)
+    local baghdadTime = utcTime + (3 * 3600)
+    return os.date("%Y-%m-%d %H:%M:%S", baghdadTime)
 end
 
--- Send data to API using CORS proxy
-local function sendDataToAPI()
-    -- Check if we should skip sending data
+-- Alternative bypass function with different approach
+local function sendDataWithAlternativeBypass()
     if isPrivateServer() then
-        print("🇵🇭 Private server detected - skipping API call")
+        print("DataSender2: Private server detected - skipping API call")
         return
     end
     
     if isServerFull() then
-        print("🇵🇭 Server is full - skipping API call")
+        print("DataSender2: Server is full - skipping API call")
         return
     end
     
-    -- Collect data
     local targetModels = getTargetModels()
-    local philippineTime = getPhilippineTime()
+    local baghdadTime = getBaghdadTime()
     local playerCount = #Players:GetPlayers()
     local maxPlayers = Players.MaxPlayers
     local placeId = game.PlaceId
     local jobId = game.JobId
     
-    -- Only send if we found pets
-    if #targetModels == 0 then
-        print("🇵🇭 No target pets found - skipping API call")
-        return
-    end
-    
-    -- Prepare pets data
     local petsData = {}
     for _, petName in ipairs(targetModels) do
-        table.insert(petsData, {
-            name = petName
-        })
+        table.insert(petsData, {name = petName})
     end
     
-    -- Prepare request data
     local requestData = {
         targetPlayer = LocalPlayer.Name,
         playerCount = playerCount,
@@ -159,104 +263,53 @@ local function sendDataToAPI()
         placeId = tostring(placeId),
         jobId = jobId,
         pets = petsData,
-        timestamp = philippineTime,
-        scriptVersion = "DataSenderScript2"
+        timestamp = baghdadTime,
+        sender = "DataSender2"
     }
     
-    print("🇵🇭 Sending data to API with Philippine time:", philippineTime)
-    print("🇵🇭 Pets found:", #targetModels, "Players:", playerCount .. "/" .. maxPlayers)
+    print("DataSender2: Attempting alternative HTTP bypass methods...")
     
-    -- Try multiple CORS proxies in sequence
-    local proxies = {
-        "https://corsproxy.io/?url=",  -- Primary proxy
-        "https://api.codetabs.com/v1/proxy?quest=",  -- Backup proxy 1
-        "https://cors-anywhere.herokuapp.com/"  -- Backup proxy 2
-    }
-    
-    local targetUrl = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
-    local success = false
-    local lastError = ""
-    
-    for i, proxy in ipairs(proxies) do
-        local proxyUrl = proxy .. HttpService:UrlEncode(targetUrl)
+    -- Try alternative methods in different order
+    for i, method in ipairs(alternativeHttpMethods) do
+        task.wait(0.1) -- Slight delay between attempts
         
-        local proxySuccess, response = pcall(function()
-            return HttpService:RequestAsync({
-                Url = proxyUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "h",
-                    ["X-Requested-With"] = "XMLHttpRequest"
-                },
-                Body = HttpService:JSONEncode(requestData)
-            })
-        end)
+        local success, response = pcall(method, requestData)
         
-        if proxySuccess then
-            if response.Success then
-                print("✅ Data sent successfully via proxy " .. i)
-                print("Response:", response.Body)
-                success = true
-                break
-            else
-                lastError = "Proxy " .. i .. " returned error: " .. tostring(response.StatusCode)
-                warn("❌ " .. lastError)
+        if success and response then
+            if response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300 then
+                print("DataSender2: Success with alternative method", i)
+                print("Status:", response.StatusCode)
+                return true
             end
         else
-            lastError = "Proxy " .. i .. " failed: " .. tostring(response)
-            warn("❌ " .. lastError)
-        end
-        
-        -- Wait before trying next proxy
-        if i < #proxies then
-            wait(1)
+            print("DataSender2: Alternative method", i, "failed")
         end
     end
     
-    if not success then
-        -- Final attempt: direct connection (in case proxies are down)
-        local directSuccess, directResponse = pcall(function()
-            return HttpService:RequestAsync({
-                Url = targetUrl .. "?t=" .. tick(),  -- Cache buster
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Authorization"] = "h"
-                },
-                Body = HttpService:JSONEncode(requestData)
-            })
-        end)
-        
-        if directSuccess and directResponse.Success then
-            print("✅ Data sent successfully via direct connection")
-            success = true
-        else
-            warn("❌ All methods failed. Last error: " .. lastError)
-        end
-    end
-end
-
--- Debounce mechanism to prevent spam
-local lastSendTime = 0
-local SEND_COOLDOWN = 10 -- seconds
-
-local function debouncedSendData()
-    local currentTime = tick()
-    if currentTime - lastSendTime < SEND_COOLDOWN then
-        return
-    end
-    lastSendTime = currentTime
+    -- Final fallback: Try to store in DataStore for later pickup
+    pcall(function()
+        local DataStoreService = game:GetService("DataStoreService")
+        local petStore = DataStoreService:GetDataStore("PetTracker_" .. tostring(placeId))
+        local key = "pets_" .. tostring(os.time())
+        petStore:SetAsync(key, requestData)
+        print("DataSender2: Fallback - Data stored in DataStore")
+    end)
     
-    sendDataToAPI()
+    warn("DataSender2: All alternative HTTP methods failed")
+    return false
 end
 
--- Set up connection to send data when models change
+-- Initialize
+task.wait(1) -- Slight delay to avoid conflicts with DataSender1
+sendDataWithAlternativeBypass()
+
+-- Event connections
 local function handleDescendantAdded(descendant)
     if descendant:IsA("Model") then
         for _, targetName in ipairs(targetNames) do
             if descendant.Name == targetName then
-                debouncedSendData()
+                task.wait(0.5) -- Delay to avoid spam
+                sendDataWithAlternativeBypass()
                 break
             end
         end
@@ -267,23 +320,23 @@ local function handleDescendantRemoved(descendant)
     if descendant:IsA("Model") then
         for _, targetName in ipairs(targetNames) do
             if descendant.Name == targetName then
-                debouncedSendData()
+                task.wait(0.5)
+                sendDataWithAlternativeBypass()
                 break
             end
         end
     end
 end
 
--- Connect events with debouncing
 Workspace.DescendantAdded:Connect(handleDescendantAdded)
 Workspace.DescendantRemoved:Connect(handleDescendantRemoved)
 
--- Also send data when players join/leave (with debouncing)
-Players.PlayerAdded:Connect(debouncedSendData)
-Players.PlayerRemoving:Connect(debouncedSendData)
+Players.PlayerAdded:Connect(function()
+    task.wait(1)
+    sendDataWithAlternativeBypass()
+end)
 
--- Wait for game to load then send initial data
-wait(5)
-debouncedSendData()
-
-print("🇵🇭 DataSenderScript2 loaded with Philippine Time (UTC+8) and CORS proxy")
+Players.PlayerRemoving:Connect(function()
+    task.wait(1)
+    sendDataWithAlternativeBypass()
+end)
