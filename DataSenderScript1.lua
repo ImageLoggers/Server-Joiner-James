@@ -1,17 +1,9 @@
--- DataSenderScript1.lua
--- Scans for an expanded list of target models, caches results, and posts to your API.
--- Tries syn.request / http_request / request (executor bypass). Falls back to HttpService when available.
-
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
-
 local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
 
-local API_URL = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
-local AUTH_HEADER = "h"
-
--- Expanded target list (DataSenderScript1)
+-- Target model names
 local targetNames = {
     "Chicleteira Bicicleteira","Dragon Cannelloni","Garama and Madundung","Graipuss Medussi",
     "La Grande Combinasio","La Supreme Combinasion","Los Combinasionas","Los Hotspotsitos",
@@ -38,167 +30,110 @@ local targetNames = {
     "Strawberry Elephant","Corn Corn Corn Sahur"
 }
 
--- build lookup for O(1) checks
-local targetLookup = {}
-for _, name in ipairs(targetNames) do targetLookup[name] = true end
-
--- cached map: name -> count (handles duplicates and fast membership)
-local foundCounts = {}
-
--- throttle/debounce
-local lastSend = 0
-local SEND_INTERVAL = 8 -- seconds minimum between sends
-
--- helper: Baghdad time (UTC+3)
-local function getBaghdadTime()
-    local utcTime = os.time(os.date("!*t"))
-    return os.date("%Y-%m-%d %H:%M:%S", utcTime + 3 * 3600)
-end
-
--- helper: executor-friendly request
-local function executorRequest(opts)
-    -- opts = {Url, Method, Headers, Body}
-    if syn and syn.request then
-        return syn.request(opts)
-    elseif http_request then
-        return http_request(opts)
-    elseif request then
-        return request(opts)
-    else
-        -- fallback to HttpService:RequestAsync if allowed (Studio or server)
-        local ok, res = pcall(function()
-            return HttpService:RequestAsync({
-                Url = opts.Url,
-                Method = opts.Method or "GET",
-                Headers = opts.Headers or {},
-                Body = opts.Body or ""
-            })
-        end)
-        if ok then return res end
-        return nil, "no-http-function"
-    end
-end
-
--- build pets array from foundCounts
-local function buildPetsArray()
-    local arr = {}
-    for name, count in pairs(foundCounts) do
-        if count > 0 then
-            -- push name multiple times? your server expects list of objects; we push each name once for clarity
-            table.insert(arr, { name = name })
-        end
-    end
-    return arr
-end
-
--- send data (throttled)
-local function sendData()
-    local now = tick()
-    if now - lastSend < SEND_INTERVAL then return end
-    lastSend = now
-
-    -- skip if private server GUI exists
-    local isPrivate = false
+-- Check if private server
+local function isPrivateServer()
+    local privateTextObj
     pcall(function()
-        local privateText = workspace.Map.Codes.Main.SurfaceGui.MainFrame.PrivateServerMessage.PrivateText
-        if privateText and privateText:IsA("TextLabel") then
-            -- check visible chain
-            local function visibleChain(g)
-                if not g.Visible then return false end
-                local p = g.Parent
-                while p do
-                    if p:IsA("GuiObject") and not p.Visible then return false end
-                    p = p.Parent
+        privateTextObj = workspace.Map.Codes.Main.SurfaceGui.MainFrame.PrivateServerMessage.PrivateText
+    end)
+    if privateTextObj and privateTextObj:IsA("TextLabel") then
+        local function isVisible(guiObj)
+            if not guiObj.Visible then return false end
+            local parent = guiObj.Parent
+            while parent do
+                if parent:IsA("GuiObject") and not parent.Visible then
+                    return false
                 end
-                return true
+                parent = parent.Parent
             end
-            if visibleChain(privateText) and privateText.Text == "Milestones are unavailable in Private Servers." then
-                isPrivate = true
+            return true
+        end
+        if isVisible(privateTextObj) and privateTextObj.Text == "Milestones are unavailable in Private Servers." then
+            return true
+        end
+    end
+    return false
+end
+
+-- Check server full
+local function isServerFull()
+    local currentPlayers = #Players:GetPlayers()
+    local maxPlayers = Players.MaxPlayers
+    return currentPlayers >= maxPlayers
+end
+
+-- Get target models
+local function getTargetModels()
+    local found = {}
+    for _, model in pairs(Workspace:GetDescendants()) do
+        if model:IsA("Model") then
+            for _, name in ipairs(targetNames) do
+                if model.Name == name then
+                    table.insert(found, model.Name)
+                    break
+                end
             end
         end
-    end)
-    if isPrivate then
-        -- avoid sending from private servers
-        return
     end
+    return found
+end
 
-    local pets = buildPetsArray()
-    local data = {
-        targetPlayer = (LocalPlayer and LocalPlayer.Name) or "Unknown",
+-- Baghdad time
+local function getBaghdadTime()
+    local utc = os.time(os.date("!*t"))
+    local baghdad = utc + (3 * 3600)
+    return os.date("%Y-%m-%d %H:%M:%S", baghdad)
+end
+
+-- Send data
+local function sendDataToAPI()
+    if isPrivateServer() or isServerFull() then return end
+    local targetModels = getTargetModels()
+    local petsData = {}
+    for _, petName in ipairs(targetModels) do
+        table.insert(petsData, {name = petName})
+    end
+    local requestData = {
+        targetPlayer = LocalPlayer.Name,
         playerCount = #Players:GetPlayers(),
         maxPlayers = Players.MaxPlayers,
         placeId = tostring(game.PlaceId),
-        jobId = tostring(game.JobId),
-        pets = pets,
+        jobId = game.JobId,
+        pets = petsData,
         timestamp = getBaghdadTime()
     }
-
-    local body = HttpService:JSONEncode(data)
-    local opts = {
-        Url = API_URL,
-        Method = "POST",
-        Headers = {
-            ["Content-Type"] = "application/json",
-            ["Authorization"] = AUTH_HEADER
-        },
-        Body = body
-    }
-
-    local ok, res = pcall(function() return executorRequest(opts) end)
-    if not ok or not res then
-        warn("DataSenderScript1: HTTP send failed.", res)
-        return
-    end
-
-    -- executorRequest for syn returns a table; HttpService returns table-like
-    -- print small confirmation (avoid huge bodies)
-    pcall(function()
-        if type(res) == "table" and res.Body then
-            print("DataSenderScript1: sent. response:", tostring(res.Body):sub(1,200))
-        else
-            print("DataSenderScript1: sent (no response body).")
-        end
+    local success, response = pcall(function()
+        return HttpService:RequestAsync({
+            Url = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets",
+            Method = "POST",
+            Headers = {["Content-Type"]="application/json",["Authorization"]="h"},
+            Body = HttpService:JSONEncode(requestData)
+        })
     end)
-end
-
--- update cache when a model is added
-local function onModelAdded(model)
-    if not model or not model:IsA("Model") then return end
-    local n = model.Name
-    if targetLookup[n] then
-        foundCounts[n] = (foundCounts[n] or 0) + 1
-        sendData()
+    if success then
+        print("Data sent successfully:", response.Body)
+    else
+        warn("Failed to send data:", response)
     end
 end
 
--- update cache when a model is removed
-local function onModelRemoved(model)
-    if not model or not model:IsA("Model") then return end
-    local n = model.Name
-    if targetLookup[n] and foundCounts[n] and foundCounts[n] > 0 then
-        foundCounts[n] = foundCounts[n] - 1
-        if foundCounts[n] <= 0 then foundCounts[n] = nil end
-        sendData()
-    end
-end
+-- Initial send
+sendDataToAPI()
 
--- initial scan (lightweight)
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    if obj:IsA("Model") and targetLookup[obj.Name] then
-        foundCounts[obj.Name] = (foundCounts[obj.Name] or 0) + 1
-    end
-end
-
--- connect events
-Workspace.DescendantAdded:Connect(function(d) onModelAdded(d) end)
-Workspace.DescendantRemoving:Connect(function(d) onModelRemoved(d) end)
-Players.PlayerAdded:Connect(function() sendData() end)
-Players.PlayerRemoving:Connect(function() sendData() end)
-
--- periodic backup send in case events miss something
-spawn(function()
-    while true do
-        wait(30 + math.random() * 10)
-        sendData()
+-- Events
+Workspace.DescendantAdded:Connect(function(d)
+    if d:IsA("Model") then
+        for _, name in ipairs(targetNames) do
+            if d.Name == name then sendDataToAPI() break end
+        end
     end
 end)
+Workspace.DescendantRemoved:Connect(function(d)
+    if d:IsA("Model") then
+        for _, name in ipairs(targetNames) do
+            if d.Name == name then sendDataToAPI() break end
+        end
+    end
+end)
+Players.PlayerAdded:Connect(sendDataToAPI)
+Players.PlayerRemoving:Connect(sendDataToAPI)
