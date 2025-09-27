@@ -1,17 +1,15 @@
--- DataSenderScript2.lua
--- Alternate/backup target list. Optimized, cached, throttled, executor-friendly HTTP.
-
+-- DataSenderScript2 (complete, fixed payload, executor-only HTTP)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- API config (change if needed)
+-- API config (replace if needed)
 local API_URL = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
 local AUTH_HEADER = "h"
 
--- Alternate/backup target list (DataSenderScript2)
+-- Target list (alternate/backup list)
 local targetNames = {
     "Agarrini La Palini","Alessio","Ballerino Lololo","Bombardini Tortinii",
     "Bulbito Bandito Traktorito","Chimpanzini Spiderini","Developorini Braziliaspidini",
@@ -45,17 +43,17 @@ local targetNames = {
     "Corn Corn Corn Sahur","Graipuss Medussi","Nooo My Hotspot","Los Matteos"
 }
 
--- Build fast lookup
+-- Fast membership lookup
 local targetLookup = {}
-for _, v in ipairs(targetNames) do
-    targetLookup[v] = true
+for _, name in ipairs(targetNames) do
+    targetLookup[name] = true
 end
 
--- Cached counts to avoid full rescans each event
+-- Cache counts as lightweight state
 local foundCounts = {}
 
 -- Throttle settings
-local SEND_INTERVAL = 8
+local SEND_INTERVAL = 8 -- seconds
 local lastSend = 0
 
 -- Helper: Baghdad time (UTC+3)
@@ -64,58 +62,52 @@ local function getBaghdadTime()
     return os.date("%Y-%m-%d %H:%M:%S", utcTime + 3 * 3600)
 end
 
--- Executor-friendly request wrapper
+-- Executor-only request: try syn.request / http_request / request
 local function executorRequest(opts)
-    -- opts: { Url=string, Method=string, Headers=table, Body=string }
+    -- opts = { Url=..., Method=..., Headers=..., Body=... }
     if syn and syn.request then
-        return syn.request(opts)
-    elseif http_request then
-        return http_request(opts)
-    elseif request then
-        return request(opts)
-    else
-        -- Fallback to HttpService:RequestAsync (works in Studio/server if enabled)
-        local ok, res = pcall(function()
-            return HttpService:RequestAsync({
-                Url = opts.Url,
-                Method = opts.Method or "GET",
-                Headers = opts.Headers or {},
-                Body = opts.Body or ""
-            })
-        end)
-        if ok then
-            return res
-        end
-        return nil, "no-http-function"
+        local ok, res = pcall(function() return syn.request(opts) end)
+        if ok then return res end
+        return nil, res
     end
+    if http_request then
+        local ok, res = pcall(function() return http_request(opts) end)
+        if ok then return res end
+        return nil, res
+    end
+    if request then
+        local ok, res = pcall(function() return request(opts) end)
+        if ok then return res end
+        return nil, res
+    end
+    -- If we reach here, executor doesn't support outbound HTTP
+    return nil, "no-executor-http"
 end
 
--- Build pets array from cache
+-- Build pets array as [{name="..."},...]
 local function buildPetsArray()
     local arr = {}
     for name, cnt in pairs(foundCounts) do
-        if cnt > 0 then
-            table.insert(arr, { name = name })
+        if cnt and cnt > 0 then
+            table.insert(arr, { name = tostring(name) })
         end
     end
     return arr
 end
 
--- Check for private server UI (same logic used elsewhere)
+-- Private server check (same as your other scripts)
 local function isPrivateServer()
     local privateTextObj
     pcall(function()
         privateTextObj = workspace.Map.Codes.Main.SurfaceGui.MainFrame.PrivateServerMessage.PrivateText
     end)
     if privateTextObj and privateTextObj:IsA("TextLabel") then
-        local function visibleChain(guiObj)
-            if not guiObj.Visible then return false end
-            local parent = guiObj.Parent
-            while parent do
-                if parent:IsA("GuiObject") and not parent.Visible then
-                    return false
-                end
-                parent = parent.Parent
+        local function visibleChain(g)
+            if not g.Visible then return false end
+            local p = g.Parent
+            while p do
+                if p:IsA("GuiObject") and not p.Visible then return false end
+                p = p.Parent
             end
             return true
         end
@@ -126,31 +118,33 @@ local function isPrivateServer()
     return false
 end
 
--- Send data (throttled)
+-- Build and send payload (throttled, executor-only)
 local function sendData()
     local now = tick()
-    if now - lastSend < SEND_INTERVAL then
-        return
-    end
+    if now - lastSend < SEND_INTERVAL then return end
     lastSend = now
 
     if isPrivateServer() then
-        -- skip sending from private servers
+        print("DataSenderScript2: detected private server — skipping send")
         return
     end
 
-    local pets = buildPetsArray()
-    local data = {
-        targetPlayer = (LocalPlayer and LocalPlayer.Name) or "Unknown",
-        playerCount = #Players:GetPlayers(),
-        maxPlayers = Players.MaxPlayers,
-        placeId = tostring(game.PlaceId),
-        jobId = tostring(game.JobId),
-        pets = pets,
-        timestamp = getBaghdadTime()
+    -- Ensure required fields are present and typed correctly
+    local payload = {
+        targetPlayer = tostring((LocalPlayer and LocalPlayer.Name) or "Unknown"),
+        playerCount = tonumber(#Players:GetPlayers()) or 0,
+        maxPlayers = tonumber(Players.MaxPlayers) or 0,
+        placeId = tostring(game.PlaceId or "0"),
+        jobId = tostring(game.JobId or "0"),
+        pets = buildPetsArray(),
+        timestamp = tostring(getBaghdadTime())
     }
 
-    local body = HttpService:JSONEncode(data)
+    -- Ensure pets is always an array (may be empty)
+    if not payload.pets then payload.pets = {} end
+
+    local body = HttpService:JSONEncode(payload)
+
     local opts = {
         Url = API_URL,
         Method = "POST",
@@ -161,22 +155,27 @@ local function sendData()
         Body = body
     }
 
-    local ok, res = pcall(function() return executorRequest(opts) end)
-    if not ok or not res then
-        warn("DataSenderScript2: HTTP send failed.", res)
+    local res, err = executorRequest(opts)
+    if not res then
+        if err == "no-executor-http" then
+            warn("DataSenderScript2: executor does not expose HTTP functions (syn.request/http_request/request). Cannot send.")
+        else
+            warn("DataSenderScript2: HTTP request failed:", tostring(err))
+        end
         return
     end
 
+    -- Normalize response reporting
     pcall(function()
         if type(res) == "table" and res.Body then
-            print("DataSenderScript2: sent. response:", tostring(res.Body):sub(1,200))
+            print("DataSenderScript2: sent. response:", tostring(res.Body))
         else
-            print("DataSenderScript2: sent (no response body).")
+            print("DataSenderScript2: sent (no body).")
         end
     end)
 end
 
--- Model added handler (updates cache)
+-- Handlers to update cache and trigger send
 local function onModelAdded(model)
     if not model or not model:IsA("Model") then return end
     local name = model.Name
@@ -186,20 +185,17 @@ local function onModelAdded(model)
     end
 end
 
--- Model removed handler (updates cache)
 local function onModelRemoved(model)
     if not model or not model:IsA("Model") then return end
     local name = model.Name
     if targetLookup[name] and foundCounts[name] and foundCounts[name] > 0 then
         foundCounts[name] = foundCounts[name] - 1
-        if foundCounts[name] <= 0 then
-            foundCounts[name] = nil
-        end
+        if foundCounts[name] <= 0 then foundCounts[name] = nil end
         sendData()
     end
 end
 
--- Initial lightweight scan to populate cache
+-- Initial lightweight scan to populate foundCounts
 for _, obj in ipairs(Workspace:GetDescendants()) do
     if obj:IsA("Model") and targetLookup[obj.Name] then
         foundCounts[obj.Name] = (foundCounts[obj.Name] or 0) + 1
@@ -212,7 +208,7 @@ Workspace.DescendantRemoving:Connect(onModelRemoved)
 Players.PlayerAdded:Connect(function() sendData() end)
 Players.PlayerRemoving:Connect(function() sendData() end)
 
--- Periodic backup send in case events missed something
+-- Periodic backup send
 spawn(function()
     while true do
         wait(30 + math.random() * 10)
