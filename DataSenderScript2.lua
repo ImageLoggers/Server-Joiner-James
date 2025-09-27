@@ -61,7 +61,7 @@ end
 local lastSend = 0
 local function sendServerData()
     local now = tick()
-    if now - lastSend < 10 then return end
+    if now - lastSend < 30 then return end
     lastSend = now
 
     local data = {
