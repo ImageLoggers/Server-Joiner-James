@@ -1,5 +1,5 @@
 -- DataSenderScript2.lua
--- Alternate/backup target list. Also optimized + executor HTTP bypass like Script1.
+-- Alternate/backup target list. Optimized, cached, throttled, executor-friendly HTTP.
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -7,6 +7,7 @@ local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- API config (change if needed)
 local API_URL = "https://pet-tracker-api-pettrackerapi.up.railway.app/api/pets"
 local AUTH_HEADER = "h"
 
@@ -44,20 +45,28 @@ local targetNames = {
     "Corn Corn Corn Sahur","Graipuss Medussi","Nooo My Hotspot","Los Matteos"
 }
 
--- lookup + cache
+-- Build fast lookup
 local targetLookup = {}
-for _, name in ipairs(targetNames) do targetLookup[name] = true end
+for _, v in ipairs(targetNames) do
+    targetLookup[v] = true
+end
 
+-- Cached counts to avoid full rescans each event
 local foundCounts = {}
-local lastSend = 0
-local SEND_INTERVAL = 8
 
+-- Throttle settings
+local SEND_INTERVAL = 8
+local lastSend = 0
+
+-- Helper: Baghdad time (UTC+3)
 local function getBaghdadTime()
     local utcTime = os.time(os.date("!*t"))
     return os.date("%Y-%m-%d %H:%M:%S", utcTime + 3 * 3600)
 end
 
+-- Executor-friendly request wrapper
 local function executorRequest(opts)
+    -- opts: { Url=string, Method=string, Headers=table, Body=string }
     if syn and syn.request then
         return syn.request(opts)
     elseif http_request then
@@ -65,6 +74,7 @@ local function executorRequest(opts)
     elseif request then
         return request(opts)
     else
+        -- Fallback to HttpService:RequestAsync (works in Studio/server if enabled)
         local ok, res = pcall(function()
             return HttpService:RequestAsync({
                 Url = opts.Url,
@@ -73,44 +83,61 @@ local function executorRequest(opts)
                 Body = opts.Body or ""
             })
         end)
-        if ok then return res end
+        if ok then
+            return res
+        end
         return nil, "no-http-function"
     end
 end
 
+-- Build pets array from cache
 local function buildPetsArray()
     local arr = {}
-    for name, count in pairs(foundCounts) do
-        if count > 0 then table.insert(arr, { name = name }) end
+    for name, cnt in pairs(foundCounts) do
+        if cnt > 0 then
+            table.insert(arr, { name = name })
+        end
     end
     return arr
 end
 
+-- Check for private server UI (same logic used elsewhere)
+local function isPrivateServer()
+    local privateTextObj
+    pcall(function()
+        privateTextObj = workspace.Map.Codes.Main.SurfaceGui.MainFrame.PrivateServerMessage.PrivateText
+    end)
+    if privateTextObj and privateTextObj:IsA("TextLabel") then
+        local function visibleChain(guiObj)
+            if not guiObj.Visible then return false end
+            local parent = guiObj.Parent
+            while parent do
+                if parent:IsA("GuiObject") and not parent.Visible then
+                    return false
+                end
+                parent = parent.Parent
+            end
+            return true
+        end
+        if visibleChain(privateTextObj) and privateTextObj.Text == "Milestones are unavailable in Private Servers." then
+            return true
+        end
+    end
+    return false
+end
+
+-- Send data (throttled)
 local function sendData()
     local now = tick()
-    if now - lastSend < SEND_INTERVAL then return end
+    if now - lastSend < SEND_INTERVAL then
+        return
+    end
     lastSend = now
 
-    -- private server check
-    local isPrivate = false
-    pcall(function()
-        local privateText = workspace.Map.Codes.Main.SurfaceGui.MainFrame.PrivateServerMessage.PrivateText
-        if privateText and privateText:IsA("TextLabel") then
-            local function visibleChain(g)
-                if not g.Visible then return false end
-                local p = g.Parent
-                while p do
-                    if p:IsA("GuiObject") and not p.Visible then return false end
-                    p = p.Parent
-                end
-                return true
-            end
-            if visibleChain(privateText) and privateText.Text == "Milestones are unavailable in Private Servers." then
-                isPrivate = true
-            end
-        end
-    end)
-    if isPrivate then return end
+    if isPrivateServer() then
+        -- skip sending from private servers
+        return
+    end
 
     local pets = buildPetsArray()
     local data = {
@@ -149,39 +176,43 @@ local function sendData()
     end)
 end
 
+-- Model added handler (updates cache)
 local function onModelAdded(model)
     if not model or not model:IsA("Model") then return end
-    local n = model.Name
-    if targetLookup[n] then
-        foundCounts[n] = (foundCounts[n] or 0) + 1
+    local name = model.Name
+    if targetLookup[name] then
+        foundCounts[name] = (foundCounts[name] or 0) + 1
         sendData()
     end
 end
 
+-- Model removed handler (updates cache)
 local function onModelRemoved(model)
     if not model or not model:IsA("Model") then return end
-    local n = model.Name
-    if targetLookup[n] and foundCounts[n] and foundCounts[n] > 0 then
-        foundCounts[n] = foundCounts[n] - 1
-        if foundCounts[n] <= 0 then foundCounts[n] = nil end
+    local name = model.Name
+    if targetLookup[name] and foundCounts[name] and foundCounts[name] > 0 then
+        foundCounts[name] = foundCounts[name] - 1
+        if foundCounts[name] <= 0 then
+            foundCounts[name] = nil
+        end
         sendData()
     end
 end
 
--- initial scan
+-- Initial lightweight scan to populate cache
 for _, obj in ipairs(Workspace:GetDescendants()) do
     if obj:IsA("Model") and targetLookup[obj.Name] then
         foundCounts[obj.Name] = (foundCounts[obj.Name] or 0) + 1
     end
 end
 
--- connect events
+-- Connect events
 Workspace.DescendantAdded:Connect(onModelAdded)
 Workspace.DescendantRemoving:Connect(onModelRemoved)
 Players.PlayerAdded:Connect(function() sendData() end)
 Players.PlayerRemoving:Connect(function() sendData() end)
 
--- periodic backup
+-- Periodic backup send in case events missed something
 spawn(function()
     while true do
         wait(30 + math.random() * 10)
