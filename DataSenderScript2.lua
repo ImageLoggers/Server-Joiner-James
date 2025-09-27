@@ -1,12 +1,14 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
 
 local API_URL = "https://petroblox-data-api.vercel.app/api/pets"
 local AUTH_HEADER = "h"
 
-local targetModels2 = {
+-- List of pet/model names to track
+local TARGET_MODELS = {
     "Agarrini La Palini", "Alessio", "Ballerino Lololo", "Bombardini Tortinii",
     "Bulbito Bandito Traktorito", "Chimpanzini Spiderini", "Developorini Braziliaspidini",
     "Dul Dul Dul", "Esok Sekolah", "Espresso Signora", "Gattatino Neonino",
@@ -39,45 +41,28 @@ local targetModels2 = {
     "Los Matteos"
 }
 
+local TARGET_LOOKUP = {}
+for _, name in ipairs(TARGET_MODELS) do
+    TARGET_LOOKUP[name] = true
+end
+
+-- Get all pets/models
 local function getTargets()
     local found = {}
     for _, model in pairs(Workspace:GetDescendants()) do
-        if model:IsA("Model") then
-            for _, target in ipairs(targetModels2) do
-                if model.Name == target then
-                    table.insert(found, {name = model.Name})
-                end
-            end
+        if model:IsA("Model") and TARGET_LOOKUP[model.Name] then
+            table.insert(found, {name = model.Name})
         end
     end
     return found
 end
 
-local function sendData()
+-- Throttle sending to reduce lag
+local lastSend = 0
+local function sendServerData()
+    local now = tick()
+    if now - lastSend < 10 then return end
+    lastSend = now
+
     local data = {
-        targetPlayer = LocalPlayer.Name,
-        placeId = tostring(game.PlaceId),
-        jobId = tostring(game.JobId),
-        playerCount = #Players:GetPlayers(),
-        maxPlayers = Players.MaxPlayers,
-        pets = getTargets()
-    }
-    pcall(function()
-        HttpService:PostAsync(
-            API_URL,
-            HttpService:JSONEncode(data),
-            Enum.HttpContentType.ApplicationJson,
-            false,
-            {["Authorization"] = AUTH_HEADER}
-        )
-    end)
-end
-
--- Initial send
-sendData()
-
--- Updates when models or players change
-Workspace.DescendantAdded:Connect(sendData)
-Workspace.DescendantRemoving:Connect(sendData)
-Players.PlayerAdded:Connect(sendData)
-Players.PlayerRemoving:Connect(sendData)
+        targetPlayer
