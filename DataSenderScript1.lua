@@ -1,12 +1,14 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
 
 local API_URL = "https://petroblox-data-api.vercel.app/api/pets"
 local AUTH_HEADER = "h"
 
-local targetModels1 = {
+-- List of pet/model names to track
+local TARGET_MODELS = {
     "Chicleteira Bicicleteira", "Dragon Cannelloni", "Garama and Madundung",
     "Graipuss Medussi", "La Grande Combinasio", "La Supreme Combinasion",
     "Los Combinasionas", "Los Hotspotsitos", "Los Matteos", "Nooo My Hotspot",
@@ -38,21 +40,30 @@ local targetModels1 = {
     "Strawberry Elephant", "Corn Corn Corn Sahur"
 }
 
+-- Build a lookup table for fast checking
+local TARGET_LOOKUP = {}
+for _, name in ipairs(TARGET_MODELS) do
+    TARGET_LOOKUP[name] = true
+end
+
+-- Function to get pets/models in Workspace
 local function getTargets()
     local found = {}
     for _, model in pairs(Workspace:GetDescendants()) do
-        if model:IsA("Model") then
-            for _, target in ipairs(targetModels1) do
-                if model.Name == target then
-                    table.insert(found, {name = model.Name})
-                end
-            end
+        if model:IsA("Model") and TARGET_LOOKUP[model.Name] then
+            table.insert(found, {name = model.Name})
         end
     end
     return found
 end
 
+-- Throttle sending to avoid lag
+local lastSend = 0
 local function sendData()
+    local now = tick()
+    if now - lastSend < 30 then return end
+    lastSend = now
+
     local data = {
         targetPlayer = LocalPlayer.Name,
         placeId = tostring(game.PlaceId),
@@ -61,6 +72,7 @@ local function sendData()
         maxPlayers = Players.MaxPlayers,
         pets = getTargets()
     }
+
     pcall(function()
         HttpService:PostAsync(
             API_URL,
@@ -72,11 +84,13 @@ local function sendData()
     end)
 end
 
--- Initial send
-sendData()
-
--- Updates when models or players change
-Workspace.DescendantAdded:Connect(sendData)
-Workspace.DescendantRemoving:Connect(sendData)
+-- Connect events
 Players.PlayerAdded:Connect(sendData)
 Players.PlayerRemoving:Connect(sendData)
+Workspace.DescendantAdded:Connect(sendData)
+Workspace.DescendantRemoving:Connect(sendData)
+
+-- Periodic send every 15 seconds
+while wait(15) do
+    sendData()
+end
